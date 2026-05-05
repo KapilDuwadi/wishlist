@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>WishList</title>
+<meta name="description" content="A quiet place for movies, books, places — anything for someday." />
+<meta name="theme-color" content="#f3ede1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        serif: ['Cormorant Garamond', 'Georgia', 'serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      colors: {
+        paper: {
+          DEFAULT: '#f3ede1',
+          2: '#ebe4d3',
+          3: '#e2dac5',
+        },
+        card: '#faf5e9',
+        ink: {
+          DEFAULT: '#1f1c17',
+          soft: '#524b3e',
+          mute: '#8a8273',
+          faint: '#b8b1a0',
+        },
+        rule: {
+          DEFAULT: '#d6cdba',
+          soft: '#e3dcc8',
+        },
+        accent: {
+          DEFAULT: '#8b3a1d',
+          soft: '#b85a3a',
+          bg: '#f0d4c4',
+        },
+        done: '#6b8e6b',
+        danger: '#a04030',
+      },
+    },
+  },
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #f3ede1; }
+  body {
+    background-image:
+      radial-gradient(circle at 30% 20%, rgba(139,58,29,0.025) 0, transparent 50%),
+      radial-gradient(circle at 70% 80%, rgba(60,40,20,0.025) 0, transparent 50%);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(60,40,20,.15); border-radius: 3px; }
+  /* Serif italic placeholder */
+  .serif-italic-input::placeholder { font-style: italic; color: #8a8273; }
+  /* Drag states */
+  .dragging-row { opacity: 0.35; }
+  .drop-before { border-top: 2px solid #8b3a1d !important; }
+  .drop-after  { border-bottom: 2px solid #8b3a1d !important; }
+  /* Strikethrough done */
+  .done-title { text-decoration: line-through; text-decoration-color: rgba(60,40,20,.3); text-decoration-thickness: 1px; }
+  /* Animations */
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+  .anim-fadeIn { animation: fadeIn .18s ease; }
+  .anim-slideUp { animation: slideUp .22s cubic-bezier(.2,.7,.3,1); }
+  .anim-toastIn { animation: toastIn .25s cubic-bezier(.2,.7,.3,1); }
+  .anim-slideInLeft { animation: slideInLeft .22s cubic-bezier(.2,.7,.3,1); }
+  /* Safe area padding for mobile */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  /* Prevent iOS tap highlight */
+  button { -webkit-tap-highlight-color: transparent; }
+  /* Category item hover slide */
+  .item-row { transition: background .12s, padding-left .15s; }
+  .item-row:hover { background: rgba(255,250,240,.55); padding-left: 8px; }
+  /* Check button */
+  .check-btn { transition: border-color .15s, background .15s, color .15s, transform .15s; }
+  .check-btn:hover { border-color: #8b3a1d !important; transform: scale(1.08); }
+  /* Grip */
+  .grip-handle { opacity: 0; transition: opacity .12s; cursor: grab; }
+  .item-row:hover .grip-handle,
+  .cat-item:hover .grip-handle { opacity: 0.7; }
+  .grip-handle:active { cursor: grabbing; }
+  /* Mobile sidebar overlay */
+  .sidebar-overlay { animation: fadeIn .18s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+// ─── Storage ────────────────────────────────────────────────
+const STORAGE_KEY = 'wishlist.v1';
+const SEED = {
+  version: 1,
+  categories: [
+    { id: 'cat-movies', name: 'Movies' },
+    { id: 'cat-books',  name: 'Books' },
+    { id: 'cat-places', name: 'Places' },
+    { id: 'cat-series', name: 'Series' },
+  ],
+  items: [
+    { id: 'i1', categoryId: 'cat-movies', title: 'The Banshees of Inisherin', description: 'Recommended by Sara, said it stayed with her for weeks.', source: 'Sara', url: '', addedAt: '2026-04-12T10:14:00Z', done: true, completedAt: '2026-04-22T20:30:00Z', rating: 4 },
+    { id: 'i2', categoryId: 'cat-movies', title: 'Perfect Days', description: 'Wim Wenders, slow and quiet. Tokyo.', source: 'Letterboxd', url: '', addedAt: '2026-04-29T08:02:00Z', done: false, completedAt: null, rating: null },
+    { id: 'i3', categoryId: 'cat-books',  title: 'A Gentleman in Moscow', description: '', source: 'Bookstore window', url: '', addedAt: '2026-03-30T15:20:00Z', done: true, completedAt: '2026-04-18T22:00:00Z', rating: 5 },
+    { id: 'i4', categoryId: 'cat-books',  title: 'The Overstory', description: 'Long but apparently worth it.', source: 'Reddit r/books', url: '', addedAt: '2026-04-25T09:00:00Z', done: false, completedAt: null, rating: null },
+    { id: 'i5', categoryId: 'cat-places', title: 'Cinque Terre', description: 'Off-season, walk between the villages.', source: 'Travel pod', url: '', addedAt: '2026-02-14T12:00:00Z', done: false, completedAt: null, rating: null },
+    { id: 'i6', categoryId: 'cat-places', title: 'Naoshima Island', description: 'Art island in Japan. Plan around the ferry.', source: 'Mom', url: '', addedAt: '2026-04-30T18:30:00Z', done: false, completedAt: null, rating: null },
+    { id: 'i7', categoryId: 'cat-series', title: 'Severance S2', description: '', source: '', url: '', addedAt: '2026-04-28T21:00:00Z', done: false, completedAt: null, rating: null },
+    { id: 'i8', categoryId: 'cat-series', title: 'Slow Horses', description: 'Apple TV. Gary Oldman.', source: 'Tom', url: '', addedAt: '2026-04-02T19:00:00Z', done: true, completedAt: '2026-04-20T23:15:00Z', rating: 4 },
+  ],
+};
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return SEED;
+    const parsed = JSON.parse(raw);
+    if (!parsed.categories || !parsed.items) return SEED;
+    return parsed;
+  } catch { return SEED; }
+}
+function saveState(s) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+const uid = () => 'x' + Math.random().toString(36).slice(2, 10);
+
+// ─── CSV helpers ────────────────────────────────────────────
+function escapeCSV(v) {
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toCSV(state) {
+  const byId = Object.fromEntries(state.categories.map(c => [c.id, c.name]));
+  const cols = ['category','title','description','source','url','addedAt','done','completedAt','rating'];
+  const rows = [cols.join(',')];
+  for (const it of state.items) {
+    rows.push([
+      escapeCSV(byId[it.categoryId] || 'Uncategorized'),
+      escapeCSV(it.title),
+      escapeCSV(it.description || ''),
+      escapeCSV(it.source || ''),
+      escapeCSV(it.url || ''),
+      escapeCSV(it.addedAt || ''),
+      escapeCSV(it.done ? 'yes' : 'no'),
+      escapeCSV(it.completedAt || ''),
+      escapeCSV(it.rating ?? ''),
+    ].join(','));
+  }
+  return rows.join('\n');
+}
+function parseCSV(text) {
+  const rows = []; let row = [], cur = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c === '\r') {}
+      else cur += c;
+    }
+  }
+  if (cur.length || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.length && r.some(v => v.length));
+}
+function fromCSV(text, existing) {
+  const rows = parseCSV(text);
+  if (!rows.length) return null;
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const idx = (n) => header.indexOf(n);
+  const categories = [...existing.categories];
+  const items = [...existing.items];
+  const catByName = new Map(categories.map(c => [c.name.toLowerCase(), c]));
+  let added = 0, dupes = 0;
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const get = (n) => { const i = idx(n); return i >= 0 ? (row[i] || '').trim() : ''; };
+    const title = get('title'); if (!title) continue;
+    const catName = get('category') || 'Uncategorized';
+    let cat = catByName.get(catName.toLowerCase());
+    if (!cat) { cat = { id: uid(), name: catName }; categories.push(cat); catByName.set(catName.toLowerCase(), cat); }
+    const dup = items.find(it => it.categoryId === cat.id && it.title.toLowerCase() === title.toLowerCase());
+    if (dup) { dupes++; continue; }
+    items.push({ id: uid(), categoryId: cat.id, title, description: get('description'), source: get('source'), url: get('url'), addedAt: get('addedat') || new Date().toISOString(), done: /^(yes|true|1|done)$/i.test(get('done')), completedAt: get('completedat') || null, rating: get('rating') ? Number(get('rating')) || null : null });
+    added++;
+  }
+  return { ...existing, categories, items, added, dupes };
+}
+
+// ─── Utils ───────────────────────────────────────────────────
+const fmtDate = (iso) => { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return ''; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); };
+const fmtRelative = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date(), diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  if (diff < 86400*7) return Math.floor(diff/86400) + 'd ago';
+  return fmtDate(iso);
+};
+
+// ─── Icons ───────────────────────────────────────────────────
+const Icon = ({ name, size = 16 }) => {
+  const s = size, st = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const paths = {
+    plus:     <path d="M8 3v10M3 8h10" {...st}/>,
+    search:   <g {...st}><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></g>,
+    download: <g {...st}><path d="M8 2v8.5M4.5 7L8 10.5 11.5 7"/><path d="M3 13h10"/></g>,
+    upload:   <g {...st}><path d="M8 13V4.5M4.5 8L8 4.5 11.5 8"/><path d="M3 13h10"/></g>,
+    x:        <path d="M3 3l10 10M13 3L3 13" {...st}/>,
+    grip:     <g fill="currentColor"><circle cx="6" cy="4" r="1"/><circle cx="10" cy="4" r="1"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="8" r="1"/><circle cx="6" cy="12" r="1"/><circle cx="10" cy="12" r="1"/></g>,
+    check:    <path d="M3.5 8.5L6.5 11.5 12.5 4.5" {...st}/>,
+    pencil:   <g {...st}><path d="M11.5 2.5l2 2-7 7H4.5v-2z"/></g>,
+    trash:    <g {...st}><path d="M3 4.5h10M6 4.5V3h4v1.5M5 4.5l.5 8.5h5L11 4.5"/></g>,
+    link:     <g {...st}><path d="M7 9a2.5 2.5 0 003.5 0l2-2a2.5 2.5 0 00-3.5-3.5L8 4.5"/><path d="M9 7a2.5 2.5 0 00-3.5 0l-2 2a2.5 2.5 0 003.5 3.5L8 11.5"/></g>,
+    star:     <path d="M8 2l1.8 3.7 4.2.6-3 3 .7 4.2L8 11.5 4.3 13.5l.7-4.2-3-3 4.2-.6z" {...st}/>,
+    starFill: <path d="M8 2l1.8 3.7 4.2.6-3 3 .7 4.2L8 11.5 4.3 13.5l.7-4.2-3-3 4.2-.6z" fill="currentColor"/>,
+    chevron:  <path d="M5 6l3 3 3-3" {...st}/>,
+    menu:     <g {...st}><path d="M2 4h12M2 8h12M2 12h12"/></g>,
+    arrowLeft:<path d="M10 3L4 8l6 5" {...st}/>,
+    lists:    <g {...st}><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6h6M5 9h4"/></g>,
+  };
+  return <svg width={s} height={s} viewBox="0 0 16 16" style={{ display: 'block', flexShrink: 0 }}>{paths[name]}</svg>;
+};
+
+// ─── StarPicker ──────────────────────────────────────────────
+function StarPicker({ value, onChange, size = 16, readOnly = false }) {
+  const [hover, setHover] = useState(null);
+  const v = hover ?? value ?? 0;
+  return (
+    <div className="flex gap-0.5" onMouseLeave={() => setHover(null)}>
+      {[1,2,3,4,5].map(n => (
+        <button key={n} type="button"
+          className={`p-0.5 border-0 bg-transparent cursor-pointer flex items-center transition-colors ${n <= v ? 'text-accent' : 'text-rule'}`}
+          style={{ color: n <= v ? '#8b3a1d' : '#d6cdba' }}
+          onMouseEnter={() => !readOnly && setHover(n)}
+          onClick={(e) => { e.stopPropagation(); if (readOnly) return; onChange && onChange(value === n ? null : n); }}
+          tabIndex={readOnly ? -1 : 0}
+          disabled={readOnly}
+        >
+          <Icon name={n <= v ? 'starFill' : 'star'} size={size}/>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── DragList ────────────────────────────────────────────────
+function DragList({ items, keyOf, onReorder, renderItem }) {
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+
+  const handlersFor = (idx) => ({
+    draggable: true,
+    onDragStart: (e) => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(idx)); } catch {} },
+    onDragEnd: () => { setDragIdx(null); setOverIdx(null); },
+  });
+
+  const rowDnd = (idx) => ({
+    onDragOver: (e) => { if (dragIdx == null || dragIdx === idx) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverIdx(idx); },
+    onDrop: (e) => {
+      e.preventDefault();
+      if (dragIdx == null || dragIdx === idx) { setOverIdx(null); return; }
+      const next = items.slice(); const [moved] = next.splice(dragIdx, 1); next.splice(idx, 0, moved);
+      onReorder(next); setDragIdx(null); setOverIdx(null);
+    },
+  });
+
+  return (
+    <>
+      {items.map((item, idx) => {
+        const key = keyOf(item);
+        const isDragging = dragIdx === idx;
+        const isOver = overIdx === idx && dragIdx !== null && dragIdx !== idx;
+        const dragDir = isOver ? (idx > dragIdx ? 'after' : 'before') : null;
+        return (
+          <div key={key}
+            className={`border-transparent border-t-2 border-b-2 ${isDragging ? 'dragging-row' : ''} ${dragDir === 'before' ? 'drop-before' : dragDir === 'after' ? 'drop-after' : ''}`}
+            {...rowDnd(idx)}
+          >
+            {renderItem(item, handlersFor(idx))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ─── EmptyState ──────────────────────────────────────────────
+function EmptyState({ search, onAddNew }) {
+  if (search) return (
+    <div className="text-center py-20 px-4 text-ink-mute">
+      <p className="font-serif italic text-2xl text-ink-soft mb-1">Nothing matches "{search}"</p>
+      <p className="text-sm">Try a different search, or clear the filter.</p>
+    </div>
+  );
+  return (
+    <div className="text-center py-16 px-4 text-ink-mute">
+      <div className="flex justify-center mb-5 text-ink-faint" style={{ color: '#b8b1a0' }}>
+        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+          <path d="M16 10h24a2 2 0 012 2v34l-8-5-6 4-6-4-8 5V12a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" opacity=".5"/>
+          <path d="M22 22h12M22 28h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".4"/>
+        </svg>
+      </div>
+      <p className="font-serif italic text-2xl mb-1" style={{ color: '#524b3e' }}>Nothing here yet</p>
+      <p className="text-sm mb-4" style={{ maxWidth: 280, margin: '0 auto 16px' }}>Add your first item above, or open the editor for the full form.</p>
+      <button onClick={onAddNew}
+        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium transition-colors"
+        style={{ background: '#1f1c17', color: '#f3ede1' }}
+        onMouseEnter={e => e.currentTarget.style.background='#8b3a1d'}
+        onMouseLeave={e => e.currentTarget.style.background='#1f1c17'}
+      >
+        <Icon name="plus" size={13}/> Add an item
+      </button>
+    </div>
+  );
+}
+
+// ─── ItemRow ─────────────────────────────────────────────────
+function ItemRow({ item, onToggle, onEdit, dragHandlers, compact }) {
+  return (
+    <div className="item-row flex items-start gap-3.5 border-b cursor-pointer rounded-sm"
+      style={{ padding: compact ? '12px 6px 12px 2px' : '18px 6px 18px 2px', borderColor: '#e3dcc8' }}
+      onClick={() => onEdit(item)}
+    >
+      <span className="grip-handle text-ink-faint flex items-center pt-0.5 -ml-1.5" style={{ color: '#b8b1a0', paddingTop: 3 }}
+        {...dragHandlers} onClick={e => e.stopPropagation()}>
+        <Icon name="grip" size={14}/>
+      </span>
+      <button
+        className={`check-btn flex-shrink-0 w-5 h-5 rounded-full border flex items-center justify-center mt-0.5 ${item.done ? '' : ''}`}
+        style={{
+          background: item.done ? '#8b3a1d' : '#f3ede1',
+          borderColor: item.done ? '#8b3a1d' : '#b8b1a0',
+          color: item.done ? '#f3ede1' : 'transparent',
+        }}
+        onClick={e => { e.stopPropagation(); onToggle(item.id); }}
+        aria-label={item.done ? 'Mark as not done' : 'Mark as done'}
+      >
+        {item.done && <Icon name="check" size={12}/>}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className={`font-serif leading-tight ${compact ? 'text-lg' : 'text-xl'} font-medium tracking-tight ${item.done ? 'done-title' : ''}`}
+          style={{ fontSize: compact ? 17 : 21, letterSpacing: '-0.3px', color: item.done ? '#8a8273' : '#1f1c17' }}>
+          {item.title}
+        </div>
+        {!compact && item.description && (
+          <div className="text-sm mt-1 leading-relaxed line-clamp-2" style={{ color: '#524b3e' }}>{item.description}</div>
+        )}
+        <div className="flex flex-wrap gap-3.5 mt-2" style={{ fontSize: 11.5, color: '#8a8273' }}>
+          {item.source && <span className="italic">via {item.source}</span>}
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 no-underline hover:underline"
+              style={{ color: '#8b3a1d' }}
+              onClick={e => e.stopPropagation()}>
+              <Icon name="link" size={11}/>link
+            </a>
+          )}
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {item.done ? `finished ${fmtDate(item.completedAt)}` : `added ${fmtRelative(item.addedAt)}`}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-center flex-shrink-0">
+        {item.done && item.rating && <StarPicker value={item.rating} readOnly size={12}/>}
+      </div>
+    </div>
+  );
+}
+
+function ItemList({ items, onToggle, onEdit, onReorder, compact }) {
+  return (
+    <div className="flex flex-col">
+      <DragList items={items} keyOf={it => it.id} onReorder={onReorder}
+        renderItem={(it, dh) => <ItemRow item={it} onToggle={onToggle} onEdit={onEdit} dragHandlers={dh} compact={compact}/>}
+      />
+    </div>
+  );
+}
+
+// ─── ItemEditor ──────────────────────────────────────────────
+function ItemEditor({ item, categories, defaultCategoryId, onClose, onSave, onDelete }) {
+  const [draft, setDraft] = useState(() => ({
+    title: item?.title ?? '',
+    description: item?.description ?? '',
+    source: item?.source ?? '',
+    url: item?.url ?? '',
+    categoryId: item?.categoryId ?? defaultCategoryId ?? categories[0]?.id,
+    done: item?.done ?? false,
+    completedAt: item?.completedAt ?? null,
+    rating: item?.rating ?? null,
+    addedAt: item?.addedAt ?? new Date().toISOString(),
+  }));
+
+  const set = (patch) => setDraft(d => ({ ...d, ...patch }));
+  const onSubmit = (e) => { e.preventDefault(); if (!draft.title.trim()) return; onSave({ ...draft, title: draft.title.trim() }); };
+  const handleDoneToggle = () => { if (draft.done) set({ done: false, completedAt: null }); else set({ done: true, completedAt: new Date().toISOString() }); };
+
+  useEffect(() => {
+    const k = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [onClose]);
+
+  const inputStyle = { background: '#f3ede1', border: '1px solid #d6cdba', borderRadius: 5, padding: '9px 12px', fontSize: 14, outline: 'none', color: '#1f1c17', width: '100%', fontFamily: 'inherit' };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-5 anim-fadeIn"
+      style={{ background: 'rgba(40,30,20,.4)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <form className="anim-slideUp w-full sm:max-w-lg flex flex-col rounded-t-2xl sm:rounded-xl overflow-hidden"
+        style={{ background: '#faf5e9', boxShadow: '0 24px 80px rgba(40,30,20,.28), 0 4px 12px rgba(40,30,20,.12)', maxHeight: '92vh' }}
+        onClick={e => e.stopPropagation()} onSubmit={onSubmit}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: '#e3dcc8' }}>
+          <span className="font-serif uppercase text-xs tracking-widest" style={{ color: '#8a8273', fontSize: 11 }}>
+            {item ? 'Edit item' : 'New item'}
+          </span>
+          <button type="button" onClick={onClose}
+            className="p-1 rounded flex items-center justify-center transition-colors hover:bg-paper-2"
+            style={{ color: '#8a8273' }}>
+            <Icon name="x" size={14}/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+          <input
+            autoFocus
+            placeholder="Title…"
+            value={draft.title}
+            onChange={e => set({ title: e.target.value })}
+            required
+            className="font-serif text-2xl font-medium tracking-tight w-full bg-transparent border-0 border-b outline-none pb-1"
+            style={{ fontSize: 22, letterSpacing: '-0.3px', borderBottom: '1px solid #d6cdba', color: '#1f1c17' }}
+            onFocus={e => e.target.style.borderBottomColor = '#8b3a1d'}
+            onBlur={e => e.target.style.borderBottomColor = '#d6cdba'}
+          />
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>List</label>
+            <select value={draft.categoryId} onChange={e => set({ categoryId: e.target.value })} style={inputStyle}>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>Notes</label>
+            <textarea placeholder="What's it about, why you want to remember it…" rows={3} value={draft.description}
+              onChange={e => set({ description: e.target.value })}
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 60, lineHeight: 1.5 }}
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="flex flex-col gap-1.5 flex-1">
+              <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>Source</label>
+              <input placeholder="Who or where it came from" value={draft.source} onChange={e => set({ source: e.target.value })} style={inputStyle}/>
+            </div>
+            <div className="flex flex-col gap-1.5 flex-1">
+              <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>Link</label>
+              <input type="url" placeholder="https://…" value={draft.url} onChange={e => set({ url: e.target.value })} style={inputStyle}/>
+            </div>
+          </div>
+
+          <div className="rounded-lg p-3 flex flex-col gap-3" style={{ background: '#ebe4d3' }}>
+            <button type="button" onClick={handleDoneToggle}
+              className={`flex items-center gap-2.5 bg-transparent border-0 cursor-pointer text-sm ${draft.done ? 'font-medium' : ''}`}
+              style={{ color: draft.done ? '#1f1c17' : '#524b3e', padding: 0 }}>
+              <span className={`check-btn flex-shrink-0 w-5 h-5 rounded-full border flex items-center justify-center`}
+                style={{ background: draft.done ? '#8b3a1d' : '#f3ede1', borderColor: draft.done ? '#8b3a1d' : '#b8b1a0', color: draft.done ? '#f3ede1' : 'transparent' }}>
+                {draft.done && <Icon name="check" size={12}/>}
+              </span>
+              {draft.done ? 'Done' : 'Mark as done'}
+            </button>
+            {draft.done && (
+              <div className="flex gap-4 pt-2.5 items-end border-t" style={{ borderColor: '#e3dcc8' }}>
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>Finished</label>
+                  <input type="date" value={draft.completedAt ? draft.completedAt.slice(0,10) : ''}
+                    onChange={e => set({ completedAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                    style={inputStyle}/>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs uppercase tracking-wider font-medium" style={{ color: '#8a8273', letterSpacing: '0.08em' }}>Rating</label>
+                  <StarPicker value={draft.rating} onChange={v => set({ rating: v })} size={20}/>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {item && <div className="text-xs pt-1 border-t border-dashed" style={{ color: '#8a8273', borderColor: '#e3dcc8' }}>Added {fmtDate(draft.addedAt)}</div>}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 py-3.5 border-t" style={{ borderColor: '#e3dcc8', background: '#ebe4d3' }}>
+          {onDelete && (
+            <button type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium border transition-colors"
+              style={{ background: 'none', borderColor: '#d6cdba', color: '#524b3e' }}
+              onMouseEnter={e => { e.currentTarget.style.color='#a04030'; e.currentTarget.style.borderColor='#a04030'; }}
+              onMouseLeave={e => { e.currentTarget.style.color='#524b3e'; e.currentTarget.style.borderColor='#d6cdba'; }}
+              onClick={() => { if (confirm('Delete this item?')) onDelete(); }}>
+              <Icon name="trash" size={13}/> Delete
+            </button>
+          )}
+          <div className="flex-1"/>
+          <button type="button" onClick={onClose}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded text-sm font-medium border transition-colors"
+            style={{ background: 'none', borderColor: '#d6cdba', color: '#524b3e' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#f3ede1'; }}
+            onMouseLeave={e => { e.currentTarget.style.background='none'; }}>
+            Cancel
+          </button>
+          <button type="submit"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded text-sm font-medium transition-colors"
+            style={{ background: '#1f1c17', color: '#f3ede1' }}
+            onMouseEnter={e => e.currentTarget.style.background='#8b3a1d'}
+            onMouseLeave={e => e.currentTarget.style.background='#1f1c17'}>
+            {item ? 'Save' : 'Add item'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ─── ImportDialog ────────────────────────────────────────────
+function ImportDialog({ onClose, onImport }) {
+  const [text, setText] = useState('');
+  const fileRef = useRef(null);
+  const onFile = (f) => { if (!f) return; const r = new FileReader(); r.onload = () => setText(r.result || ''); r.readAsText(f); };
+
+  useEffect(() => {
+    const k = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [onClose]);
+
+  const inputStyle = { background: '#f3ede1', border: '1px solid #d6cdba', borderRadius: 5, padding: '9px 12px', fontSize: 14, outline: 'none', color: '#1f1c17', width: '100%', fontFamily: 'inherit' };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-5 anim-fadeIn"
+      style={{ background: 'rgba(40,30,20,.4)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div className="anim-slideUp w-full sm:max-w-lg flex flex-col rounded-t-2xl sm:rounded-xl overflow-hidden"
+        style={{ background: '#faf5e9', boxShadow: '0 24px 80px rgba(40,30,20,.28)', maxHeight: '92vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: '#e3dcc8' }}>
+          <span className="font-serif uppercase text-xs tracking-widest" style={{ color: '#8a8273', fontSize: 11 }}>Import CSV</span>
+          <button type="button" onClick={onClose} className="p-1 rounded flex items-center" style={{ color: '#8a8273' }}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+          <p className="text-sm leading-relaxed m-0" style={{ color: '#524b3e' }}>
+            Drop a previously-exported wishlist file. Items merge into your current data — new categories are created if they don't exist, exact duplicates are skipped.
+          </p>
+          <div
+            className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center gap-2 cursor-pointer text-sm transition-colors"
+            style={{ borderColor: '#d6cdba', color: '#8a8273', background: '#f3ede1' }}
+            onClick={() => fileRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor='#8b3a1d'; e.currentTarget.style.color='#8b3a1d'; e.currentTarget.style.background='#f0d4c4'; }}
+            onDragLeave={e => { e.currentTarget.style.borderColor='#d6cdba'; e.currentTarget.style.color='#8a8273'; e.currentTarget.style.background='#f3ede1'; }}
+            onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor='#d6cdba'; e.currentTarget.style.color='#8a8273'; e.currentTarget.style.background='#f3ede1'; onFile(e.dataTransfer.files?.[0]); }}
+          >
+            <Icon name="upload" size={20}/>
+            <span>Click to choose a .csv, or drop one here</span>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={e => onFile(e.target.files?.[0])}/>
+          </div>
+          <div className="text-center text-xs uppercase tracking-widest" style={{ color: '#8a8273' }}>or paste the CSV text</div>
+          <textarea rows={6} placeholder="category,title,description,…" value={text} onChange={e => setText(e.target.value)}
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 80, lineHeight: 1.5 }}/>
+        </div>
+        <div className="flex gap-2 px-5 py-3.5 border-t" style={{ borderColor: '#e3dcc8', background: '#ebe4d3' }}>
+          <div className="flex-1"/>
+          <button type="button" onClick={onClose}
+            className="px-3 py-2 rounded text-sm font-medium border"
+            style={{ background: 'none', borderColor: '#d6cdba', color: '#524b3e' }}>Cancel</button>
+          <button type="button" disabled={!text.trim()} onClick={() => onImport(text)}
+            className="px-3.5 py-2 rounded text-sm font-medium transition-colors disabled:opacity-40"
+            style={{ background: '#1f1c17', color: '#f3ede1' }}
+            onMouseEnter={e => !e.currentTarget.disabled && (e.currentTarget.style.background='#8b3a1d')}
+            onMouseLeave={e => e.currentTarget.style.background='#1f1c17'}>
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar content ─────────────────────────────────────────
+function SidebarContent({ state, activeCatId, setActiveCatId, counts, addCategory, renameCategory, deleteCategory, reorderCategories, exportCSV, setShowImport, onClose }) {
+  const [newCatMode, setNewCatMode] = useState(false);
+  const [renamingCat, setRenamingCat] = useState(null);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Brand */}
+      <header className="flex items-center gap-3 px-3 pb-5 border-b mb-3.5" style={{ borderColor: '#e3dcc8' }}>
+        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ background: '#8b3a1d', color: '#f3ede1', boxShadow: '0 1px 0 rgba(255,255,255,.2) inset, 0 2px 4px rgba(60,40,20,.15)' }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 3.5l1.85 3.96 4.15.5-3.06 2.92.79 4.31L10 12.96l-3.73 2.23.79-4.31L4 7.96l4.15-.5L10 3.5z"
+              fill="currentColor" stroke="currentColor" strokeWidth=".6" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <div className="flex flex-col">
+          <span className="font-serif font-semibold leading-none" style={{ fontSize: 22, letterSpacing: '-0.4px', color: '#1f1c17' }}>WishList</span>
+          <span className="font-serif italic mt-1" style={{ fontSize: 12.5, color: '#8a8273', lineHeight: 1.2 }}>a quiet place for someday</span>
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="ml-auto p-1.5 rounded flex items-center" style={{ color: '#8a8273', background: 'none', border: 'none' }}>
+            <Icon name="x" size={16}/>
+          </button>
+        )}
+      </header>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto pb-3">
+        {/* Everything */}
+        <button
+          className={`cat-item flex items-center gap-2 w-full px-2.5 py-2 rounded-md text-sm text-left transition-colors border-0 ${activeCatId === '__all__' ? 'font-medium' : ''}`}
+          style={{
+            background: activeCatId === '__all__' ? '#f3ede1' : 'transparent',
+            color: activeCatId === '__all__' ? '#1f1c17' : '#524b3e',
+            boxShadow: activeCatId === '__all__' ? 'inset 2px 0 0 #8b3a1d' : 'none',
+            cursor: 'pointer',
+          }}
+          onClick={() => { setActiveCatId('__all__'); onClose && onClose(); }}
+        >
+          <span className="flex-1 truncate">Everything</span>
+          <span className="text-xs tabular-nums" style={{ color: '#8a8273' }}>{state.items.length}</span>
+        </button>
+
+        {/* Categories */}
+        <DragList items={state.categories} keyOf={c => c.id}
+          onReorder={next => reorderCategories(next.map(c => c.id))}
+          renderItem={(c, dragHandlers) => {
+            const isActive = c.id === activeCatId;
+            const isRenaming = renamingCat === c.id;
+            return (
+              <div className={`cat-item group flex items-center gap-2 px-2.5 py-2 rounded-md text-sm cursor-pointer transition-colors ${isActive ? 'font-medium' : ''}`}
+                style={{
+                  background: isActive ? '#f3ede1' : 'transparent',
+                  color: isActive ? '#1f1c17' : '#524b3e',
+                  boxShadow: isActive ? 'inset 2px 0 0 #8b3a1d' : 'none',
+                }}
+                onClick={() => { if (!isRenaming) { setActiveCatId(c.id); onClose && onClose(); } }}
+              >
+                <span className="grip-handle flex items-center" style={{ color: '#b8b1a0' }}
+                  {...dragHandlers} onClick={e => e.stopPropagation()}>
+                  <Icon name="grip" size={14}/>
+                </span>
+                {isRenaming ? (
+                  <input className="flex-1 rounded px-2 py-0.5 text-sm outline-none"
+                    style={{ background: '#f3ede1', border: '1px solid #b85a3a', fontSize: 14, color: '#1f1c17' }}
+                    autoFocus defaultValue={c.name}
+                    onBlur={e => { renameCategory(c.id, e.target.value.trim() || c.name); setRenamingCat(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setRenamingCat(null); }}
+                    onClick={e => e.stopPropagation()}
+                  />
+                ) : (
+                  <span className="flex-1 truncate" onDoubleClick={e => { e.stopPropagation(); setRenamingCat(c.id); }}>{c.name}</span>
+                )}
+                {isActive && !isRenaming ? (
+                  <span className="flex gap-0.5" onClick={e => e.stopPropagation()}>
+                    <button className="p-1 rounded flex items-center transition-colors hover:bg-paper-3" style={{ color: '#8a8273', background: 'none', border: 'none', cursor: 'pointer' }}
+                      onClick={() => setRenamingCat(c.id)}><Icon name="pencil" size={12}/></button>
+                    <button className="p-1 rounded flex items-center transition-colors" style={{ color: '#8a8273', background: 'none', border: 'none', cursor: 'pointer' }}
+                      onMouseEnter={e => e.currentTarget.style.color='#a04030'}
+                      onMouseLeave={e => e.currentTarget.style.color='#8a8273'}
+                      onClick={() => { if (confirm(`Delete "${c.name}" and all its items?`)) { deleteCategory(c.id); setActiveCatId(state.categories.find(x => x.id !== c.id)?.id ?? '__all__'); } }}>
+                      <Icon name="trash" size={12}/></button>
+                  </span>
+                ) : (
+                  !isRenaming && <span className="text-xs tabular-nums" style={{ color: '#8a8273', fontSize: 11.5 }}>{counts[c.id]?.open ?? 0}</span>
+                )}
+              </div>
+            );
+          }}
+        />
+
+        {/* New list */}
+        {newCatMode ? (
+          <div className="flex items-center gap-2 px-2.5 py-2 rounded-md" style={{ background: '#f3ede1' }}>
+            <span style={{ color: '#b8b1a0' }}><Icon name="plus" size={12}/></span>
+            <input className="flex-1 text-sm outline-none bg-transparent border-0" style={{ color: '#1f1c17', fontSize: 14 }}
+              autoFocus placeholder="New list…"
+              onBlur={e => { const v = e.target.value.trim(); if (v) { const id = addCategory(v); if (id) setActiveCatId(id); } setNewCatMode(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { e.target.value=''; setNewCatMode(false); } }}
+            />
+          </div>
+        ) : (
+          <button className="flex items-center gap-2 w-full px-2.5 py-2 rounded-md text-sm transition-colors border-0 mt-1"
+            style={{ background: 'transparent', color: '#8a8273', cursor: 'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(60,40,20,.04)'; e.currentTarget.style.color='#524b3e'; }}
+            onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#8a8273'; }}
+            onClick={() => setNewCatMode(true)}>
+            <Icon name="plus" size={12}/><span>New list</span>
+          </button>
+        )}
+      </nav>
+
+      {/* Footer */}
+      <footer className="flex gap-1.5 pt-3.5 mt-2 border-t" style={{ borderColor: '#e3dcc8' }}>
+        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded text-xs font-medium transition-colors border"
+          style={{ background: 'transparent', borderColor: 'transparent', color: '#8a8273', cursor: 'pointer' }}
+          onMouseEnter={e => { e.currentTarget.style.background='#f3ede1'; e.currentTarget.style.borderColor='#d6cdba'; e.currentTarget.style.color='#1f1c17'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='transparent'; e.currentTarget.style.color='#8a8273'; }}
+          onClick={exportCSV}>
+          <Icon name="download" size={13}/><span>Export</span>
+        </button>
+        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded text-xs font-medium transition-colors border"
+          style={{ background: 'transparent', borderColor: 'transparent', color: '#8a8273', cursor: 'pointer' }}
+          onMouseEnter={e => { e.currentTarget.style.background='#f3ede1'; e.currentTarget.style.borderColor='#d6cdba'; e.currentTarget.style.color='#1f1c17'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='transparent'; e.currentTarget.style.color='#8a8273'; }}
+          onClick={() => setShowImport(true)}>
+          <Icon name="upload" size={13}/><span>Import</span>
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+// ─── Main App ────────────────────────────────────────────────
+function App() {
+  const [state, setState] = useState(loadState);
+  const [activeCatId, setActiveCatId] = useState(state.categories[0]?.id ?? null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [editingItem, setEditingItem] = useState(null);
+  const [showImport, setShowImport] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => { saveState(state); }, [state]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 2400); return () => clearTimeout(t); }, [toast]);
+
+  const showAll = activeCatId === '__all__';
+  const activeCat = state.categories.find(c => c.id === activeCatId);
+
+  const visibleItems = useMemo(() => {
+    let items = state.items;
+    if (!showAll && activeCat) items = items.filter(i => i.categoryId === activeCat.id);
+    if (filter === 'open') items = items.filter(i => !i.done);
+    else if (filter === 'done') items = items.filter(i => i.done);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      items = items.filter(i => (i.title||'').toLowerCase().includes(q) || (i.description||'').toLowerCase().includes(q) || (i.source||'').toLowerCase().includes(q));
+    }
+    return items;
+  }, [state.items, activeCat, showAll, filter, search]);
+
+  const counts = useMemo(() => {
+    const m = {};
+    for (const c of state.categories) m[c.id] = { total: 0, open: 0 };
+    for (const it of state.items) { const e = m[it.categoryId]; if (!e) continue; e.total++; if (!it.done) e.open++; }
+    return m;
+  }, [state.items, state.categories]);
+
+  const grouped = useMemo(() => {
+    if (!showAll) return null;
+    const byCat = new Map();
+    for (const c of state.categories) byCat.set(c.id, []);
+    for (const it of visibleItems) { if (byCat.has(it.categoryId)) byCat.get(it.categoryId).push(it); }
+    return [...byCat.entries()].filter(([, arr]) => arr.length > 0);
+  }, [showAll, visibleItems, state.categories]);
+
+  // Mutations
+  const addItem = useCallback((data) => setState(s => ({ ...s, items: [...s.items, { id: uid(), addedAt: new Date().toISOString(), done: false, completedAt: null, rating: null, description: '', source: '', url: '', ...data }] })), []);
+  const updateItem = useCallback((id, patch) => setState(s => ({ ...s, items: s.items.map(i => i.id === id ? { ...i, ...patch } : i) })), []);
+  const deleteItem = useCallback((id) => setState(s => ({ ...s, items: s.items.filter(i => i.id !== id) })), []);
+  const toggleDone = useCallback((id) => setState(s => ({ ...s, items: s.items.map(i => i.id === id ? { ...i, done: !i.done, completedAt: !i.done ? new Date().toISOString() : null } : i) })), []);
+  const addCategory = useCallback((name) => { if (!name.trim()) return null; const id = uid(); setState(s => ({ ...s, categories: [...s.categories, { id, name: name.trim() }] })); return id; }, []);
+  const renameCategory = useCallback((id, name) => setState(s => ({ ...s, categories: s.categories.map(c => c.id === id ? { ...c, name } : c) })), []);
+  const deleteCategory = useCallback((id) => setState(s => ({ ...s, categories: s.categories.filter(c => c.id !== id), items: s.items.filter(i => i.categoryId !== id) })), []);
+  const reorderCategories = useCallback((next) => setState(s => ({ ...s, categories: next.map(id => s.categories.find(c => c.id === id)).filter(Boolean) })), []);
+  const reorderItemsInCat = useCallback((catId, next) => setState(s => { const inCat = next.map(id => s.items.find(it => it.id === id)).filter(Boolean); const others = s.items.filter(it => it.categoryId !== catId); return { ...s, items: [...others, ...inCat] }; }), []);
+
+  const exportCSV = () => {
+    const csv = toCSV(state);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `wishlist-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setToast({ type: 'ok', text: `Exported ${state.items.length} items` });
+  };
+  const importCSVText = (text) => {
+    const result = fromCSV(text, state);
+    if (!result) { setToast({ type: 'err', text: 'Could not parse CSV' }); return; }
+    const { added, dupes, ...next } = result;
+    setState(next);
+    setToast({ type: 'ok', text: `Imported ${added} item${added===1?'':'s'}${dupes ? ` · skipped ${dupes} dup` : ''}` });
+    setShowImport(false);
+  };
+
+  const [quickAdd, setQuickAdd] = useState('');
+  const submitQuick = () => {
+    if (!quickAdd.trim()) return;
+    if (showAll) { const cat = state.categories[0]; if (cat) addItem({ title: quickAdd.trim(), categoryId: cat.id }); }
+    else if (activeCat) addItem({ title: quickAdd.trim(), categoryId: activeCat.id });
+    setQuickAdd('');
+  };
+
+  const sidebarProps = { state, activeCatId, setActiveCatId, counts, addCategory, renameCategory, deleteCategory, reorderCategories, exportCSV, setShowImport };
+
+  return (
+    <div className="min-h-screen flex" style={{ background: '#f3ede1' }}>
+
+      {/* ── Desktop Sidebar ── */}
+      <aside className="hidden lg:flex flex-col flex-shrink-0 border-r"
+        style={{ width: 264, background: '#ebe4d3', borderColor: '#d6cdba', padding: '32px 14px 14px', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
+        <SidebarContent {...sidebarProps}/>
+      </aside>
+
+      {/* ── Mobile Sidebar Overlay ── */}
+      {sidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex">
+          <div className="sidebar-overlay absolute inset-0" style={{ background: 'rgba(40,30,20,.45)' }} onClick={() => setSidebarOpen(false)}/>
+          <aside className="relative flex flex-col z-50 border-r anim-slideInLeft"
+            style={{ width: 280, background: '#ebe4d3', borderColor: '#d6cdba', padding: '28px 14px 14px', height: '100%', overflowY: 'auto' }}>
+            <SidebarContent {...sidebarProps} onClose={() => setSidebarOpen(false)}/>
+          </aside>
+        </div>
+      )}
+
+      {/* ── Main ── */}
+      <main className="flex-1 min-w-0">
+        <div className="mx-auto w-full" style={{ maxWidth: 880, padding: '0 0 96px' }}>
+
+          {/* Mobile top bar */}
+          <div className="lg:hidden flex items-center gap-3 px-4 pt-5 pb-4 border-b sticky top-0 z-10"
+            style={{ background: '#f3ede1', borderColor: '#d6cdba' }}>
+            <button onClick={() => setSidebarOpen(true)}
+              className="flex items-center justify-center w-9 h-9 rounded-lg border transition-colors flex-shrink-0"
+              style={{ background: '#ebe4d3', borderColor: '#d6cdba', color: '#524b3e' }}>
+              <Icon name="menu" size={18}/>
+            </button>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: '#8b3a1d', color: '#f3ede1' }}>
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                  <path d="M10 3.5l1.85 3.96 4.15.5-3.06 2.92.79 4.31L10 12.96l-3.73 2.23.79-4.31L4 7.96l4.15-.5L10 3.5z" fill="currentColor" stroke="currentColor" strokeWidth=".6" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <span className="font-serif font-semibold truncate" style={{ fontSize: 18, color: '#1f1c17' }}>WishList</span>
+            </div>
+            {/* Compact toggle */}
+            <button onClick={() => setCompact(c => !c)}
+              className="text-xs px-2.5 py-1 rounded border transition-colors"
+              style={{ background: compact ? '#8b3a1d' : 'transparent', color: compact ? '#f3ede1' : '#8a8273', borderColor: compact ? '#8b3a1d' : '#d6cdba' }}>
+              {compact ? 'Compact' : 'Comfy'}
+            </button>
+          </div>
+
+          {/* Content padding */}
+          <div className="px-4 sm:px-8 lg:px-14 pt-10 lg:pt-14">
+
+            {/* Page header */}
+            <header className="mb-8">
+              <div className="flex items-baseline justify-between gap-6 mb-6 flex-wrap">
+                <h1 className="font-serif font-medium leading-none m-0" style={{ fontSize: 'clamp(32px, 6vw, 48px)', letterSpacing: '-1.2px', color: '#1f1c17' }}>
+                  {showAll ? 'Everything' : (activeCat?.name || '—')}
+                </h1>
+                <div className="flex items-center gap-1 text-xs tabular-nums" style={{ color: '#8a8273', fontSize: 12.5 }}>
+                  <span>{visibleItems.filter(i => !i.done).length} open</span>
+                  <span className="mx-2 opacity-40">·</span>
+                  <span>{visibleItems.filter(i => i.done).length} done</span>
+                </div>
+              </div>
+
+              {/* Tools row */}
+              <div className="flex gap-3 items-center flex-wrap">
+                {/* Search */}
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md border flex-1 min-w-0 transition-colors"
+                  style={{ background: '#faf5e9', borderColor: '#d6cdba', color: '#8a8273', maxWidth: 320 }}
+                  onFocusCapture={e => e.currentTarget.style.borderColor='#b85a3a'}
+                  onBlurCapture={e => e.currentTarget.style.borderColor='#d6cdba'}
+                >
+                  <Icon name="search" size={14}/>
+                  <input className="flex-1 bg-transparent border-0 outline-none text-sm" placeholder="Search…" style={{ color: '#1f1c17', minWidth: 0 }}
+                    value={search} onChange={e => setSearch(e.target.value)}/>
+                  {search && (
+                    <button onClick={() => setSearch('')} className="flex items-center" style={{ color: '#8a8273', background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
+                      <Icon name="x" size={12}/>
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter segment */}
+                <div className="flex rounded-md border p-0.5 text-sm flex-shrink-0" style={{ background: '#ebe4d3', borderColor: '#d6cdba' }}>
+                  {['all','open','done'].map(k => (
+                    <button key={k}
+                      className="px-3 py-1 rounded transition-colors border-0 cursor-pointer"
+                      style={{
+                        background: filter === k ? '#f3ede1' : 'transparent',
+                        color: filter === k ? '#1f1c17' : '#8a8273',
+                        boxShadow: filter === k ? '0 1px 2px rgba(60,40,20,.08)' : 'none',
+                        fontFamily: 'inherit', fontSize: 13,
+                      }}
+                      onClick={() => setFilter(k)}>
+                      {k === 'all' ? 'All' : k === 'open' ? 'Open' : 'Done'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Desktop compact toggle */}
+                <button className="hidden lg:block text-xs px-2.5 py-1.5 rounded border transition-colors flex-shrink-0"
+                  style={{ background: compact ? '#8b3a1d' : 'transparent', color: compact ? '#f3ede1' : '#8a8273', borderColor: compact ? '#8b3a1d' : '#d6cdba', cursor: 'pointer' }}
+                  onClick={() => setCompact(c => !c)}>
+                  {compact ? 'Compact' : 'Comfy'}
+                </button>
+              </div>
+            </header>
+
+            {/* Quick add */}
+            <div className="flex items-center gap-3 px-4 py-3.5 rounded-md border border-dashed mb-8 transition-all"
+              style={{ background: '#faf5e9', borderColor: '#d6cdba' }}
+              onFocusCapture={e => { const el = e.currentTarget; el.style.borderStyle='solid'; el.style.borderColor='#b85a3a'; el.style.background='#f3ede1'; el.style.boxShadow='0 0 0 3px #f0d4c4'; }}
+              onBlurCapture={e => { const el = e.currentTarget; el.style.borderStyle='dashed'; el.style.borderColor='#d6cdba'; el.style.background='#faf5e9'; el.style.boxShadow='none'; }}
+            >
+              <span style={{ color: '#8a8273' }}><Icon name="plus" size={14}/></span>
+              <input className="flex-1 bg-transparent border-0 outline-none font-serif italic serif-italic-input"
+                style={{ fontSize: 16, color: '#1f1c17', minWidth: 0 }}
+                placeholder={showAll ? `Add to ${state.categories[0]?.name || 'a list'}…` : `Add to ${activeCat?.name || ''}…`}
+                value={quickAdd} onChange={e => setQuickAdd(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') submitQuick(); }}
+              />
+              <button className="text-xs rounded px-2.5 py-1 transition-colors border-0 flex-shrink-0"
+                style={{ background: 'none', color: '#8a8273', cursor: 'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.color='#8b3a1d'; e.currentTarget.style.background='#ebe4d3'; }}
+                onMouseLeave={e => { e.currentTarget.style.color='#8a8273'; e.currentTarget.style.background='none'; }}
+                onClick={() => setEditingItem('new')}>
+                with details →
+              </button>
+            </div>
+
+            {/* Item list */}
+            <section className="flex flex-col gap-10">
+              {visibleItems.length === 0 ? (
+                <EmptyState search={search} onAddNew={() => setEditingItem('new')}/>
+              ) : showAll ? (
+                grouped.map(([catId, arr]) => {
+                  const cat = state.categories.find(c => c.id === catId);
+                  return (
+                    <div key={catId} className="flex flex-col">
+                      <div className="flex items-center gap-3.5 pb-3 mb-0.5">
+                        <span className="font-serif font-semibold uppercase tracking-widest" style={{ fontSize: 11.5, letterSpacing: '2px', color: '#8b3a1d' }}>{cat?.name}</span>
+                        <div className="flex-1 h-px" style={{ background: '#d6cdba' }}/>
+                        <span className="text-xs tabular-nums" style={{ color: '#8a8273', fontSize: 11 }}>{arr.length}</span>
+                      </div>
+                      <ItemList items={arr} onToggle={toggleDone} onEdit={setEditingItem}
+                        onReorder={next => reorderItemsInCat(catId, next.map(it => it.id))} compact={compact}/>
+                    </div>
+                  );
+                })
+              ) : (
+                <ItemList items={visibleItems} onToggle={toggleDone} onEdit={setEditingItem}
+                  onReorder={next => activeCat && reorderItemsInCat(activeCat.id, next.map(it => it.id))} compact={compact}/>
+              )}
+            </section>
+
+          </div>
+        </div>
+      </main>
+
+      {/* Modals */}
+      {editingItem && (
+        <ItemEditor
+          item={editingItem === 'new' ? null : editingItem}
+          categories={state.categories}
+          defaultCategoryId={!showAll ? activeCat?.id : state.categories[0]?.id}
+          onClose={() => setEditingItem(null)}
+          onSave={data => { if (editingItem === 'new') addItem(data); else updateItem(editingItem.id, data); setEditingItem(null); }}
+          onDelete={editingItem !== 'new' ? () => { deleteItem(editingItem.id); setEditingItem(null); } : null}
+        />
+      )}
+      {showImport && <ImportDialog onClose={() => setShowImport(false)} onImport={importCSVText}/>}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 px-4 py-2.5 rounded-md text-sm z-50 anim-toastIn"
+          style={{ transform: 'translateX(-50%)', background: toast.type === 'err' ? '#a04030' : '#1f1c17', color: '#f3ede1', boxShadow: '0 8px 32px rgba(40,30,20,.3)' }}>
+          {toast.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+
+// PWA service worker
+if ('serviceWorker' in navigator && location.protocol !== 'data:') {
+  const swCode = `
+    const CACHE = 'wishlist-v1';
+    self.addEventListener('install', e => self.skipWaiting());
+    self.addEventListener('activate', e => self.clients.claim());
+    self.addEventListener('fetch', e => {
+      if (e.request.method !== 'GET') return;
+      e.respondWith(caches.open(CACHE).then(c => c.match(e.request).then(r => r || fetch(e.request).then(resp => {
+        try { c.put(e.request, resp.clone()); } catch(e) {}
+        return resp;
+      }).catch(() => c.match('./')))));
+    });
+  `;
+  try {
+    const blob = new Blob([swCode], { type: 'application/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+  } catch {}
+}
+</script>
+</body>
+</html>
